@@ -1,0 +1,231 @@
+<!-- pages/editar_reserva.html -->
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editar Reserva — Autorent</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.2/font/bootstrap-icons.css"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <link rel="icon" href="/static/img/favicon.ico" />
+    <style>
+      body { font-family: "Raleway", sans-serif; }
+      .bg-gradient-blue-green { background: linear-gradient(90deg,#e6f7ff,#e8fff0); padding-bottom: 2rem; }
+    </style>
+  </head>
+  <body>
+    {% include 'components/header.html' %}
+
+    <main class="pt-5 bg-gradient-blue-green">
+      <div class="container">
+        <h1 class="text-center mb-4">Editar Reserva</h1>
+        <p class="lead text-center mb-4">Actualiza los datos de la reserva y guarda los cambios.</p>
+      </div>
+
+      <section class="container mb-5 pb-5">
+        <div class="row justify-content-center">
+          <div class="col-lg-8 col-md-10">
+            <div class="card shadow">
+              <div class="card-header bg-dark text-white">
+                <h2 class="text-center mb-0 py-2">
+                  <i class="bi bi-calendar-check me-2"></i>Modificar Reserva
+                </h2>
+              </div>
+
+              <div class="card-body p-4">
+                {% if errores %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                  <h6 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Errores de validación:</h6>
+                  <ul class="mb-0">
+                    {% for error in errores %}
+                      <li>{{ error }}</li>
+                    {% endfor %}
+                  </ul>
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="/reservas/editar/{{ reserva.id }}" novalidate>
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <label for="cliente_id" class="form-label"><i class="bi bi-person me-1"></i>Cliente *</label>
+                      <select id="cliente_id" name="cliente_id" class="form-select" required>
+                        <option value="">-- Seleccione cliente --</option>
+                        {% for c in clientes %}
+                          <option value="{{ c.id }}" {% if reserva.cliente_id == c.id %}selected{% endif %}>
+                            {{ c.nombre }} {{ c.apellido }} {% if c.email %}— {{ c.email }}{% endif %}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+
+                    <div class="col-md-6">
+                      <label for="vehiculo_id" class="form-label"><i class="bi bi-car-front-fill me-1"></i>Vehículo *</label>
+                      <select id="vehiculo_id" name="vehiculo_id" class="form-select" required>
+                        <option value="">-- Seleccione vehículo --</option>
+                        {% for v in vehiculos %}
+                          <option value="{{ v.id }}" {% if reserva.vehiculo_id == v.id %}selected{% endif %}>
+                            {{ v.matricula }} {% if v.marca or v.modelo_nombre %}— {{ v.marca or '' }} {{ v.modelo_nombre or '' }}{% endif %}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+
+                    <div class="col-md-6">
+                      <label for="empleado_id" class="form-label"><i class="bi bi-person-badge me-1"></i>Empleado (opcional)</label>
+                      <select id="empleado_id" name="empleado_id" class="form-select">
+                        <option value="">-- Ninguno --</option>
+                        {% for e in empleados %}
+                          <option value="{{ e.id }}" {% if reserva.empleado_id == e.id %}selected{% endif %}>
+                            {{ e.nombre }} {{ e.apellido }} {% if e.puesto %}— {{ e.puesto }}{% endif %}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+
+                    <div class="col-md-6">
+                      <label for="estado" class="form-label"><i class="bi bi-info-circle me-1"></i>Estado *</label>
+                      <select id="estado" name="estado" class="form-select" required>
+                        <option value="confirmada" {% if reserva.estado == 'confirmada' %}selected{% endif %}>Confirmada</option>
+                        <option value="activa" {% if reserva.estado == 'activa' %}selected{% endif %}>Activa</option>
+                        <option value="finalizada" {% if reserva.estado == 'finalizada' %}selected{% endif %}>Finalizada</option>
+                        <option value="cancelada" {% if reserva.estado == 'cancelada' %}selected{% endif %}>Cancelada</option>
+                      </select>
+                    </div>
+
+                    <div class="col-md-6">
+                      <label for="fecha_inicio" class="form-label"><i class="bi bi-calendar-event me-1"></i>Fecha inicio *</label>
+                      <input
+                        type="date"
+                        id="fecha_inicio"
+                        name="fecha_inicio"
+                        class="form-control"
+                        required
+                        value="{{ reserva.fecha_inicio[:10] if reserva.fecha_inicio }}"
+                      />
+                    </div>
+
+                    <div class="col-md-6">
+                      <label for="fecha_fin" class="form-label"><i class="bi bi-calendar-event me-1"></i>Fecha fin *</label>
+                      <input
+                        type="date"
+                        id="fecha_fin"
+                        name="fecha_fin"
+                        class="form-control"
+                        required
+                        value="{{ reserva.fecha_fin[:10] if reserva.fecha_fin }}"
+                      />
+                    </div>
+
+                    <div class="col-md-6">
+                      <label for="total_estimado" class="form-label"><i class="bi bi-currency-dollar me-1"></i>Total estimado</label>
+                      <input
+                        type="number"
+                        id="total_estimado"
+                        name="total_estimado"
+                        class="form-control"
+                        min="0"
+                        step="0.01"
+                        value="{{ '%.2f'|format(reserva.total_estimado) if reserva.total_estimado is not none else '' }}"
+                        placeholder="Ej: 120.00"
+                      />
+                    </div>
+
+                    <div class="col-12">
+                      <label for="notas" class="form-label"><i class="bi bi-journal-text me-1"></i>Notas</label>
+                      <textarea id="notas" name="notas" class="form-control" rows="4" placeholder="Observaciones, condiciones, etc.">{{ reserva.notas or '' }}</textarea>
+                    </div>
+
+                    <div class="col-12">
+                      <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success btn-lg">
+                          <i class="bi bi-check-circle me-2"></i>Guardar Cambios
+                        </button>
+                        <a href="/reservas" class="btn btn-secondary btn-lg">
+                          <i class="bi bi-arrow-left me-2"></i>Volver a Reservas
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              <div class="card-footer text-muted text-center">
+                <small>Los campos marcados con * son obligatorios</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    {% include 'components/footer.html' %}
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4"
+      crossorigin="anonymous"
+    ></script>
+    <script src="/static/js/main.js"></script>
+    <script>
+      // Validación ligera en cliente para mejorar UX
+      (function () {
+        const form = document.querySelector('form');
+        if (!form) return;
+
+        form.addEventListener('submit', function (e) {
+          const cliente = document.getElementById('cliente_id').value;
+          const vehiculo = document.getElementById('vehiculo_id').value;
+          const inicio = document.getElementById('fecha_inicio').value;
+          const fin = document.getElementById('fecha_fin').value;
+          if (!cliente) {
+            e.preventDefault();
+            alert('Seleccione un cliente.');
+            return;
+          }
+          if (!vehiculo) {
+            e.preventDefault();
+            alert('Seleccione un vehículo.');
+            return;
+          }
+          if (!inicio) {
+            e.preventDefault();
+            alert('Ingrese la fecha de inicio.');
+            return;
+          }
+          if (!fin) {
+            e.preventDefault();
+            alert('Ingrese la fecha de fin.');
+            return;
+          }
+          if (inicio > fin) {
+            e.preventDefault();
+            alert('La fecha de inicio no puede ser posterior a la fecha de fin.');
+            return;
+          }
+          const total = document.getElementById('total_estimado').value;
+          if (total && parseFloat(total) < 0) {
+            e.preventDefault();
+            alert('El total estimado debe ser un número positivo.');
+            return;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

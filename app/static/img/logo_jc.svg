@@ -1,0 +1,32 @@
+<svg width="64" height="64" viewBox="0 0 200 200" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <polygon points="100,20 20,180 180,180"
+           fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round"/>
+
+  <text x="100" y="70"  text-anchor="middle" font-family="Inter" font-size="32" font-weight="700" fill="#FFFFFF">C</text>
+  <text x="44"  y="170" text-anchor="middle" font-family="Inter" font-size="32" font-weight="700" fill="#FFFFFF">J</text>
+  <text x="148" y="170" text-anchor="middle" font-family="Inter" font-size="32" font-weight="700" fill="#FFFFFF">S</text>
+
+  <rect x="78" y="100" width="44" height="44" rx="8"
+        stroke="#FFFFFF" stroke-width="6" fill="none"/>
+
+  <line x1="78" y1="112" x2="64"  y2="112" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="78" y1="122" x2="64"  y2="122" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="78" y1="132" x2="64"  y2="132" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+
+  <line x1="122" y1="112" x2="136" y2="112" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="122" y1="122" x2="136" y2="122" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="122" y1="132" x2="136" y2="132" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+
+  <line x1="90"  y1="100" x2="90"  y2="88"  stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="100" y1="100" x2="100" y2="88"  stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="110" y1="100" x2="110" y2="88"  stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+
+  <line x1="90"  y1="144" x2="90"  y2="156" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="100" y1="144" x2="100" y2="156" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="110" y1="144" x2="110" y2="156" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+
+  <rect x="88" y="110" width="24" height="24" rx="4"
+        stroke="#FFFFFF" stroke-width="4" fill="none"/>
+</svg>
