@@ -6,6 +6,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr, field_validator, ValidationError
 from typing import Optional, List
 import re
+from pathlib import Path
+import os
+
+# Jinja2 loader utilities
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 # Importamos las funciones que consultan/insertan/eliminan en MariaDB (archivo app/database.py)
 from app.database import (
@@ -38,7 +43,6 @@ from app.database import (
 # Modelos Pydantic y validaciones
 # ----------------------------
 
-# Reutilizamos validaciones para nombres
 def validar_texto_nombre(v: str, campo: str = "campo") -> str:
     if not v or not v.strip():
         raise ValueError(f'{campo} no puede estar vacío')
@@ -147,7 +151,7 @@ class ReservaBase(BaseModel):
     cliente_id: int
     vehiculo_id: int
     empleado_id: Optional[int] = None
-    fecha_inicio: str  # ISO datetime string esperado desde formulario
+    fecha_inicio: str
     fecha_fin: str
     estado: Optional[str] = "pendiente"
     total_estimado: Optional[float] = None
@@ -180,12 +184,41 @@ class ReservaDB(ReservaBase):
 # ----------------------------
 app = FastAPI(title="Autorent")
 
-# Servir archivos estáticos (asegúrate de que la carpeta exista)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# Base dir (carpeta donde está este archivo main.py, normalmente app/)
+BASE_DIR = Path(__file__).resolve().parent
 
-# Plantillas Jinja2 (asegúrate de que la carpeta exista)
-templates = Jinja2Templates(directory="app/templates")
+# Servir archivos estáticos usando ruta absoluta
+static_dir = BASE_DIR / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+else:
+    try:
+        static_dir.mkdir(parents=True, exist_ok=True)
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    except Exception:
+        pass
 
+# Plantillas Jinja2 usando ruta absoluta (apunta a app/templates)
+templates_dir = BASE_DIR / "templates"
+
+# Inicializa Jinja2Templates apuntando al directorio principal
+templates = Jinja2Templates(directory=str(templates_dir))
+
+# Añadimos app/templates/pages al searchpath para que includes como 'components/header.html'
+# resuelvan a app/templates/pages/components/header.html
+templates.env.loader = ChoiceLoader([
+    FileSystemLoader(str(templates_dir)),           # app/templates
+    FileSystemLoader(str(templates_dir / "pages")) # app/templates/pages
+])
+
+# Debug seguro: list_templates dentro de try/except (no accedemos a atributos internos del loader)
+try:
+    detected = templates.env.list_templates()
+    print("Plantillas detectadas (ejemplo):", detected[:50])
+except Exception:
+    print("No se pudieron listar plantillas (modo debug).")
+
+print("Current working directory:", os.getcwd())
 
 # ----------------------------
 # Helpers para mapear filas a modelos
@@ -245,9 +278,6 @@ def map_rows_to_reservas(rows: List[dict]) -> List[ReservaDB]:
 
 @app.get("/", response_class=HTMLResponse)
 def get_index(request: Request):
-    """
-    Página principal: lista clientes, vehículos y reservas recientes.
-    """
     clientes_rows = fetch_all_clientes()
     vehiculos_rows = fetch_all_vehiculos()
     reservas_rows = fetch_all_reservas()
@@ -661,7 +691,6 @@ def post_nueva_reserva(
             reserva_data.notas
         )
 
-        # Si se envía un pago inmediato, no lo gestionamos aquí por simplicidad.
         return RedirectResponse(url="/reservas", status_code=303)
 
     except ValidationError as e:
@@ -801,7 +830,6 @@ def post_nuevo_pago(
     metodo_pago: str = Form(...),
     referencia: Optional[str] = Form(None)
 ):
-    # Validaciones mínimas
     if monto <= 0:
         raise HTTPException(status_code=422, detail="Monto debe ser mayor que 0")
 
