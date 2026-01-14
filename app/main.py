@@ -180,6 +180,25 @@ class ReservaDB(ReservaBase):
 # ----------------------------
 app = FastAPI(title="Autorent")
 
+# ============================
+# MODO MANTENIMIENTO ACTIVADO
+# ============================
+
+from fastapi.responses import HTMLResponse
+
+@app.middleware("http")
+async def mantenimiento_global(request, call_next):
+    """
+    Intercepta TODAS las rutas y devuelve la página de mantenimiento.
+    No ejecuta ninguna lógica del monolito.
+    """
+    return templates.TemplateResponse(
+        "maintenance.html",
+        {"request": request},
+        status_code=503
+    )
+
+
 # Servir archivos estáticos (asegúrate de que la carpeta exista)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
