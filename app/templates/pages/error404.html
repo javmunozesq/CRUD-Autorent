@@ -1,0 +1,9 @@
+{% extends "components/header.html" %} {% block content %} 
+<div class="container"> 
+    <div class="card" style="margin-top:2rem; padding:2rem; text-align:center;"> 
+        <h1 style="font-size:2.25rem; margin-bottom:0.5rem;">Error 404</h1> 
+        <p style="font-size:1.05rem; color:#6c757d;">No se pudo conectar con la base de datos. Por favor, inténtalo de nuevo más tarde.</p>
+         <p style="margin-top:1rem;">
+             <a href="/" class="btn btn-primary">Volver al inicio</a>
+              <a href="/reservas" class="btn btn-outline" style="margin-left:.5rem;">Ir a Reservas</a>
+             </p> {% if error %} <pre style="margin-top:1rem; color:#b02a37; background:#fff5f5; padding:1rem; border-radius:8px; overflow:auto;">{{ error }}</pre> {% endif %} </div> </div> {% endblock %}

@@ -9,22 +9,40 @@ from mysql.connector.cursor import MySQLCursorDict
 load_dotenv(find_dotenv())
 
 
+class DatabaseConnectionError(Exception):
+    """
+    Excepción personalizada para errores de conexión a la base de datos.
+    Las rutas pueden capturar esta excepción y devolver una página de error amigable.
+    """
+    pass
+
+
 def get_connection():
     """
     Crea y retorna una conexión a la base de datos MySQL/MariaDB
     usando variables de entorno. Valores por defecto pensados para
     un entorno de desarrollo local.
+
+    Si falla la conexión, lanza DatabaseConnectionError con el mensaje original.
     """
-    return mysql.connector.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "autorent"),
-        port=int(os.getenv("DB_PORT", "3306")),
-        charset="utf8mb4",
-        use_unicode=True,
-        autocommit=False
-    )
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST", "localhost"),
+            user=os.getenv("DB_USER", "root"),
+            password=os.getenv("DB_PASSWORD", ""),
+            database=os.getenv("DB_NAME", "autorent"),
+            port=int(os.getenv("DB_PORT", "3306")),
+            charset="utf8mb4",
+            use_unicode=True,
+            autocommit=False
+        )
+        return conn
+    except mysql.connector.Error as e:
+        # Lanzar excepción personalizada para que la app la maneje y muestre la plantilla de error
+        raise DatabaseConnectionError(f"Error al conectar con la base de datos: {e}")
+    except Exception as e:
+        # Capturar cualquier otra excepción inesperada
+        raise DatabaseConnectionError(f"Error inesperado al conectar con la base de datos: {e}")
 
 
 # ----------------------------
