@@ -1,223 +1,65 @@
 # app/main.py
-from fastapi import FastAPI, Request, Form, HTTPException
+import importlib
+import logging
+from typing import Any, List
+
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, EmailStr, field_validator, ValidationError
-from typing import Optional, List, Any
-import re
-import logging
 from jinja2 import ChoiceLoader, FileSystemLoader
 
-# Import database functions (app/database.py) including the custom exception
+# Import database helpers and exception (seguro: no importan controllers aquí)
 from app.database import (
-    # Clientes
     fetch_all_clientes,
-    insert_cliente,
-    delete_cliente,
-    fetch_cliente_by_id,
-    update_cliente,
-    # Vehículos
     fetch_all_vehiculos,
-    insert_vehiculo,
-    delete_vehiculo,
-    fetch_vehiculo_by_id,
-    update_vehiculo,
-    # Modelos y categorías
-    fetch_all_modelos,
-    fetch_all_categorias,
-    # Reservas y pagos
     fetch_all_reservas,
-    insert_reserva,
-    delete_reserva,
-    fetch_reserva_by_id,
-    update_reserva,
-    insert_pago,
-    fetch_pagos_by_reserva,
-    # Excepción personalizada para errores de conexión
-    DatabaseConnectionError
+    DatabaseConnectionError,
 )
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("autorent")
 
-# ----------------------------
-# Pydantic models and validators
-# ----------------------------
-def validar_texto_nombre(v: str, campo: str = "campo") -> str:
-    if not v or not v.strip():
-        raise ValueError(f'{campo} no puede estar vacío')
-    v = v.strip()
-    if len(v) < 2:
-        raise ValueError(f'{campo} debe tener al menos 2 caracteres')
-    if len(v) > 50:
-        raise ValueError(f'{campo} no puede exceder 50 caracteres')
-    if not re.match(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$', v):
-        raise ValueError(f'{campo} solo permite letras y espacios')
-    return v.title()
-
-
-class ClienteBase(BaseModel):
-    nombre: str
-    apellido: str
-    email: EmailStr
-    telefono: Optional[str] = None
-    direccion: Optional[str] = None
-
-    @field_validator('nombre', 'apellido')
-    @classmethod
-    def validar_nombre_apellido(cls, v: str) -> str:
-        return validar_texto_nombre(v, "Nombre/Apellido")
-
-    @field_validator('telefono')
-    @classmethod
-    def validar_telefono(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or v.strip() == '':
-            return None
-        v = v.strip()
-        telefono_limpio = re.sub(r'[\s\-\(\)]', '', v)
-        if not re.match(r'^\+?\d{7,15}$', telefono_limpio):
-            raise ValueError('Formato de teléfono inválido. Debe contener entre 7 y 15 dígitos')
-        return v
-
-    @field_validator('direccion')
-    @classmethod
-    def validar_direccion(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or v.strip() == '':
-            return None
-        v = v.strip()
-        if len(v) > 200:
-            raise ValueError('La dirección no puede exceder 200 caracteres')
-        return v
-
-
-class ClienteDB(BaseModel):
-    id: int
-    nombre: str
-    apellido: str
-    email: str
-    telefono: Optional[str] = None
-    direccion: Optional[str] = None
-
-
-class ClienteCreate(ClienteBase):
-    pass
-
-
-class ClienteUpdate(ClienteBase):
-    pass
-
-
-class VehiculoBase(BaseModel):
-    matricula: str
-    vin: Optional[str] = None
-    modelo_id: int
-    color: Optional[str] = None
-    kilometraje: Optional[int] = 0
-    estado: Optional[str] = "disponible"
-    precio_dia: float
-    ubicacion: Optional[str] = None
-
-    @field_validator('matricula')
-    @classmethod
-    def validar_matricula(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError('Matrícula no puede estar vacía')
-        v = v.strip().upper()
-        if len(v) > 20:
-            raise ValueError('Matrícula demasiado larga')
-        return v
-
-    @field_validator('precio_dia')
-    @classmethod
-    def validar_precio(cls, v: float) -> float:
-        if v is None or v <= 0:
-            raise ValueError('El precio por día debe ser mayor que 0')
-        return round(v, 2)
-
-
-class VehiculoDB(VehiculoBase):
-    id: int
-
-
-class VehiculoCreate(VehiculoBase):
-    pass
-
-
-class VehiculoUpdate(VehiculoBase):
-    pass
-
-
-class ReservaBase(BaseModel):
-    cliente_id: int
-    vehiculo_id: int
-    empleado_id: Optional[int] = None
-    fecha_inicio: str
-    fecha_fin: str
-    estado: Optional[str] = "pendiente"
-    total_estimado: Optional[float] = None
-    notas: Optional[str] = None
-
-    @field_validator('fecha_inicio', 'fecha_fin')
-    @classmethod
-    def validar_fecha_iso(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError('Fecha inválida')
-        return v.strip()
-
-    @field_validator('total_estimado')
-    @classmethod
-    def validar_total(cls, v: Optional[float]) -> Optional[float]:
-        if v is None:
-            return None
-        if v < 0:
-            raise ValueError('Total estimado no puede ser negativo')
-        return round(v, 2)
-
-
-class ReservaDB(ReservaBase):
-    id: int
-    fecha_reserva: Optional[str] = None
-
-
-# ----------------------------
-# App and templates/static setup
-# ----------------------------
+# --- Create the FastAPI app immediately so module always exposes `app` ---
 app = FastAPI(title="Autorent")
 
 # Static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Templates: allow includes from pages/ and components/
+# Templates: allow includes from pages/, pages and components/
 templates = Jinja2Templates(directory="app/templates")
-templates.env.loader = ChoiceLoader([
-    FileSystemLoader("app/templates"),
-    FileSystemLoader("app/templates/pages"),
-])
+templates.env.loader = ChoiceLoader(
+    [
+        FileSystemLoader("app/templates"),
+        FileSystemLoader("app/templates/pages"),
+        FileSystemLoader("app/templates/components"),
+    ]
+)
 
-# Favicon route to avoid 404 noise
+# Save templates in app state so controllers can access them via request.app.state.templates
+app.state.templates = templates
+
+# Favicon route
 @app.get("/favicon.ico")
 def favicon():
     return RedirectResponse(url="/static/img/favicon.ico")
 
 
 # ----------------------------
-# Utility: convert Pydantic models to plain dicts for templates
+# Helpers to convert models/rows to JSON-serializable dicts for templates
 # ----------------------------
 def model_to_dict(obj: Any) -> Any:
-    """
-    Convert a Pydantic model to a plain dict in a way compatible with both
-    pydantic v1 and v2. If obj is not a model, return it unchanged.
-    """
     if obj is None:
         return None
-    # pydantic v2
+    if isinstance(obj, dict):
+        return obj
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
-    # pydantic v1
     if hasattr(obj, "dict"):
         return obj.dict()
+    if hasattr(obj, "__dict__"):
+        return dict(obj.__dict__)
     return obj
 
 
@@ -230,100 +72,71 @@ def list_models_to_dicts(items: List[Any]) -> List[Any]:
 # ----------------------------
 @app.exception_handler(DatabaseConnectionError)
 async def db_connection_exception_handler(request: Request, exc: DatabaseConnectionError):
-    """
-    Si hay un fallo de conexión a la base de datos en cualquier parte de la app,
-    devolvemos la plantilla pages/error404.html con status 404 para mostrar un
-    mensaje amigable al usuario.
-    """
     logger.exception("DatabaseConnectionError capturada: %s", exc)
     try:
         return templates.TemplateResponse(
-            "pages/error404.html",
-            {"request": request, "error": str(exc)},
-            status_code=404
+            "pages/error404.html", {"request": request, "error": str(exc)}, status_code=404
         )
     except Exception:
-        # Fallback JSON si la plantilla no está disponible
-        return JSONResponse(content={"detail": "No se pudo conectar a la base de datos."}, status_code=404)
+        return JSONResponse(
+            content={"detail": "No se pudo conectar a la base de datos."}, status_code=404
+        )
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """
-    Manejador global para cualquier excepción no controlada.
-    Renderiza pages/error404.html para mantener una experiencia consistente.
-    """
     logger.exception("Unhandled exception capturada: %s", exc)
     try:
         return templates.TemplateResponse(
-            "pages/error404.html",
-            {"request": request, "error": str(exc)},
-            status_code=500
+            "pages/error404.html", {"request": request, "error": str(exc)}, status_code=500
         )
     except Exception:
         return JSONResponse(content={"detail": "Error interno del servidor."}, status_code=500)
 
 
 # ----------------------------
-# Helpers to map DB rows to models
+# Dynamically import and include controllers (avoids circular imports)
 # ----------------------------
-def map_rows_to_clientes(rows: List[dict]) -> List[ClienteDB]:
-    if not rows:
-        return []
-    return [
-        ClienteDB(
-            id=row["id"],
-            nombre=row["nombre"],
-            apellido=row["apellido"],
-            email=row["email"],
-            telefono=row.get("telefono"),
-            direccion=row.get("direccion"),
-        )
-        for row in rows
+def _include_controllers():
+    """
+    Import controllers dynamically and include their routers.
+    Each controller module should expose a router variable named <resource>_router
+    (e.g., clientes_router, vehiculos_router, reservas_router, pagos_router).
+    This function tolera la ausencia de módulos para no romper el arranque.
+    """
+    controller_modules = [
+        "app.controllers.clientes",
+        "app.controllers.vehiculos",
+        "app.controllers.reservas",
+        "app.controllers.pagos",
     ]
+    for mod_name in controller_modules:
+        try:
+            mod = importlib.import_module(mod_name)
+        except ModuleNotFoundError:
+            logger.debug("Controller module not found: %s", mod_name)
+            continue
+        except Exception:
+            logger.exception("Error importing controller module %s", mod_name)
+            continue
+
+        # Include any attribute that ends with "_router"
+        for attr in dir(mod):
+            if attr.endswith("_router"):
+                router = getattr(mod, attr)
+                try:
+                    app.include_router(router)
+                    logger.info("Included router %s from %s", attr, mod_name)
+                except Exception:
+                    logger.exception("Failed to include router %s from %s", attr, mod_name)
 
 
-def map_rows_to_vehiculos(rows: List[dict]) -> List[VehiculoDB]:
-    if not rows:
-        return []
-    return [
-        VehiculoDB(
-            id=row["id"],
-            matricula=row["matricula"],
-            vin=row.get("vin"),
-            modelo_id=row["modelo_id"],
-            color=row.get("color"),
-            kilometraje=row.get("kilometraje", 0),
-            estado=row.get("estado"),
-            precio_dia=float(row["precio_dia"]),
-            ubicacion=row.get("ubicacion")
-        )
-        for row in rows
-    ]
-
-
-def map_rows_to_reservas(rows: List[dict]) -> List[ReservaDB]:
-    if not rows:
-        return []
-    return [
-        ReservaDB(
-            id=row["id"],
-            cliente_id=row["cliente_id"],
-            vehiculo_id=row["vehiculo_id"],
-            empleado_id=row.get("empleado_id"),
-            fecha_inicio=str(row["fecha_inicio"]),
-            fecha_fin=str(row["fecha_fin"]),
-            estado=row.get("estado"),
-            total_estimado=float(row["total_estimado"]) if row.get("total_estimado") is not None else None,
-            notas=row.get("notas"),
-            fecha_reserva=str(row.get("fecha_reserva")) if row.get("fecha_reserva") else None
-        )
-        for row in rows
-    ]
+# Call the include function after app and templates are ready
+_include_controllers()
 
 
 # ----------------------------
-# Routes: Clientes
+# Root route: render index page (intenta cargar datos; si falla, el handler global mostrará error404)
 # ----------------------------
 @app.get("/", response_class=HTMLResponse)
 def get_index(request: Request):
@@ -332,723 +145,48 @@ def get_index(request: Request):
         vehiculos_rows = fetch_all_vehiculos() or []
         reservas_rows = fetch_all_reservas() or []
 
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-        reservas = map_rows_to_reservas(reservas_rows)
-
-        # Prepare JSON-serializable versions for templates that use tojson
-        reservas_json = list_models_to_dicts(reservas)
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
+        clientes_json = list_models_to_dicts(clientes_rows)
+        vehiculos_json = list_models_to_dicts(vehiculos_rows)
+        reservas_json = list_models_to_dicts(reservas_rows)
 
         return templates.TemplateResponse(
             "pages/index.html",
             {
                 "request": request,
-                "clientes": clientes,
-                "vehiculos": vehiculos,
-                "reservas": reservas,
+                "clientes": clientes_rows,
+                "vehiculos": vehiculos_rows,
+                "reservas": reservas_rows,
                 "clientes_json": clientes_json,
                 "vehiculos_json": vehiculos_json,
-                "reservas_json": reservas_json
-            }
+                "reservas_json": reservas_json,
+            },
         )
     except DatabaseConnectionError:
-        # Dejar que el manejador global lo procese
         raise
     except Exception:
         logger.exception("Error al renderizar la página principal")
-        # Re-raise so the global handler renders error404.html
         raise
 
 
-# Ruta /clientes que muestra la lista de clientes (usa la misma plantilla principal)
-@app.get("/clientes", response_class=HTMLResponse)
-def get_clientes(request: Request):
-    try:
-        clientes_rows = fetch_all_clientes() or []
-        vehiculos_rows = fetch_all_vehiculos() or []
-        reservas_rows = fetch_all_reservas() or []
-
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-        reservas = map_rows_to_reservas(reservas_rows)
-
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
-        reservas_json = list_models_to_dicts(reservas)
-
-        return templates.TemplateResponse(
-            "pages/index.html",
-            {
-                "request": request,
-                "clientes": clientes,
-                "vehiculos": vehiculos,
-                "reservas": reservas,
-                "clientes_json": clientes_json,
-                "vehiculos_json": vehiculos_json,
-                "reservas_json": reservas_json
-            }
-        )
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al cargar la página de clientes")
-        raise
-
-
-# GET /clientes/nuevo -> formulario para crear cliente
-@app.get("/clientes/nuevo", response_class=HTMLResponse)
-def get_nuevo_cliente(request: Request):
-    return templates.TemplateResponse("pages/nuevo_cliente.html", {"request": request, "mensaje": None})
-
-
-# Alternativa: /clientes/crear también muestra el formulario
-@app.get("/clientes/crear", response_class=HTMLResponse)
-def get_crear_cliente(request: Request):
-    return templates.TemplateResponse("pages/nuevo_cliente.html", {"request": request, "mensaje": None})
-
-
-@app.post("/clientes/nuevo")
-def post_nuevo_cliente(
-    request: Request,
-    nombre: str = Form(...),
-    apellido: str = Form(...),
-    email: str = Form(...),
-    telefono: Optional[str] = Form(None),
-    direccion: Optional[str] = Form(None)
-):
-    try:
-        cliente_data = ClienteCreate(
-            nombre=nombre,
-            apellido=apellido,
-            email=email,
-            telefono=telefono if telefono else None,
-            direccion=direccion if direccion else None
-        )
-
-        insert_cliente(
-            cliente_data.nombre,
-            cliente_data.apellido,
-            cliente_data.email,
-            cliente_data.telefono,
-            cliente_data.direccion
-        )
-
-        # Redirigir a la página principal después de crear cliente
-        return RedirectResponse(url="/", status_code=303)
-
-    except ValidationError as e:
-        errores = []
-        for error in e.errors():
-            campo = str(error['loc'][0]) if error['loc'] else 'campo'
-            mensaje = error['msg']
-            errores.append(f"{campo.capitalize()}: {mensaje}")
-
-        return templates.TemplateResponse(
-            "pages/nuevo_cliente.html",
-            {
-                "request": request,
-                "mensaje": None,
-                "errores": errores,
-                "nombre": nombre,
-                "apellido": apellido,
-                "email": email,
-                "telefono": telefono,
-                "direccion": direccion
-            },
-            status_code=422
-        )
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al insertar cliente")
-        return templates.TemplateResponse(
-            "pages/nuevo_cliente.html",
-            {"request": request, "mensaje": None, "errores": ["Error interno al insertar cliente"], "nombre": nombre, "apellido": apellido, "email": email},
-            status_code=500
-        )
-
-
-@app.delete("/clientes/{cliente_id}")
-def delete_cliente_endpoint(cliente_id: int):
-    eliminado = delete_cliente(cliente_id)
-    if not eliminado:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    return JSONResponse(content={"mensaje": "Cliente eliminado exitosamente"}, status_code=200)
-
-
-@app.get("/clientes/editar/{cliente_id}", response_class=HTMLResponse)
-def get_editar_cliente(request: Request, cliente_id: int):
-    try:
-        cliente_data = fetch_cliente_by_id(cliente_id)
-        if not cliente_data:
-            raise HTTPException(status_code=404, detail="Cliente no encontrado")
-        cliente = ClienteDB(**cliente_data)
-        return templates.TemplateResponse("pages/editar_cliente.html", {"request": request, "cliente": cliente})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al obtener cliente para editar")
-        raise
-
-
-@app.post("/clientes/editar/{cliente_id}")
-def post_editar_cliente(
-    request: Request,
-    cliente_id: int,
-    nombre: str = Form(...),
-    apellido: str = Form(...),
-    email: str = Form(...),
-    telefono: Optional[str] = Form(None),
-    direccion: Optional[str] = Form(None)
-):
-    try:
-        cliente_data = ClienteUpdate(
-            nombre=nombre,
-            apellido=apellido,
-            email=email,
-            telefono=telefono if telefono else None,
-            direccion=direccion if direccion else None
-        )
-
-        actualizado = update_cliente(
-            cliente_id,
-            cliente_data.nombre,
-            cliente_data.apellido,
-            cliente_data.email,
-            cliente_data.telefono,
-            cliente_data.direccion
-        )
-
-        if not actualizado:
-            raise HTTPException(status_code=404, detail="Cliente no encontrado")
-
-        return RedirectResponse(url="/", status_code=303)
-
-    except ValidationError as e:
-        errores = []
-        for error in e.errors():
-            campo = str(error['loc'][0]) if error['loc'] else 'campo'
-            mensaje = error['msg']
-            errores.append(f"{campo.capitalize()}: {mensaje}")
-
-        cliente_temp = ClienteDB(
-            id=cliente_id,
-            nombre=nombre,
-            apellido=apellido,
-            email=email,
-            telefono=telefono,
-            direccion=direccion
-        )
-
-        return templates.TemplateResponse("pages/editar_cliente.html", {"request": request, "cliente": cliente_temp, "errores": errores}, status_code=422)
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al actualizar cliente")
-        raise HTTPException(status_code=500, detail="Error interno al actualizar cliente")
-
-
-# ----------------------------
-# Routes: Vehículos
-# ----------------------------
-@app.get("/vehiculos", response_class=HTMLResponse)
-def get_vehiculos(request: Request):
-    try:
-        vehiculos_rows = fetch_all_vehiculos() or []
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-        modelos = fetch_all_modelos() or []
-        categorias = fetch_all_categorias() or []
-
-        vehiculos_json = list_models_to_dicts(vehiculos)
-        modelos_json = list_models_to_dicts(modelos) if isinstance(modelos, list) else modelos
-        categorias_json = list_models_to_dicts(categorias) if isinstance(categorias, list) else categorias
-
-        return templates.TemplateResponse("pages/vehiculos.html", {"request": request, "vehiculos": vehiculos, "modelos": modelos, "categorias": categorias, "vehiculos_json": vehiculos_json, "modelos_json": modelos_json, "categorias_json": categorias_json})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al obtener vehículos")
-        raise
-
-
-@app.get("/vehiculos/nuevo", response_class=HTMLResponse)
-def get_nuevo_vehiculo(request: Request):
-    try:
-        modelos = fetch_all_modelos() or []
-        categorias = fetch_all_categorias() or []
-        return templates.TemplateResponse("pages/nuevo_vehiculo.html", {"request": request, "modelos": modelos, "categorias": categorias})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al preparar formulario nuevo vehículo")
-        raise
-
-
-@app.post("/vehiculos/nuevo")
-def post_nuevo_vehiculo(
-    request: Request,
-    matricula: str = Form(...),
-    vin: Optional[str] = Form(None),
-    modelo_id: int = Form(...),
-    color: Optional[str] = Form(None),
-    kilometraje: Optional[int] = Form(0),
-    estado: Optional[str] = Form("disponible"),
-    precio_dia: float = Form(...),
-    ubicacion: Optional[str] = Form(None)
-):
-    try:
-        vehiculo_data = VehiculoCreate(
-            matricula=matricula,
-            vin=vin if vin else None,
-            modelo_id=int(modelo_id),
-            color=color if color else None,
-            kilometraje=int(kilometraje) if kilometraje is not None else 0,
-            estado=estado,
-            precio_dia=float(precio_dia),
-            ubicacion=ubicacion if ubicacion else None
-        )
-
-        insert_vehiculo(
-            vehiculo_data.matricula,
-            vehiculo_data.vin,
-            vehiculo_data.modelo_id,
-            vehiculo_data.color,
-            vehiculo_data.kilometraje,
-            vehiculo_data.estado,
-            vehiculo_data.precio_dia,
-            vehiculo_data.ubicacion
-        )
-
-        return RedirectResponse(url="/", status_code=303)
-
-    except ValidationError as e:
-        errores = []
-        for error in e.errors():
-            campo = str(error['loc'][0]) if error['loc'] else 'campo'
-            mensaje = error['msg']
-            errores.append(f"{campo.capitalize()}: {mensaje}")
-
-        modelos = fetch_all_modelos() or []
-        categorias = fetch_all_categorias() or []
-
-        return templates.TemplateResponse(
-            "pages/nuevo_vehiculo.html",
-            {
-                "request": request,
-                "errores": errores,
-                "matricula": matricula,
-                "vin": vin,
-                "modelos": modelos,
-                "categorias": categorias,
-                "color": color,
-                "kilometraje": kilometraje,
-                "estado": estado,
-                "precio_dia": precio_dia,
-                "ubicacion": ubicacion
-            },
-            status_code=422
-        )
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al insertar vehículo")
-        raise
-
-
-@app.delete("/vehiculos/{vehiculo_id}")
-def delete_vehiculo_endpoint(vehiculo_id: int):
-    eliminado = delete_vehiculo(vehiculo_id)
-    if not eliminado:
-        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
-    return JSONResponse(content={"mensaje": "Vehículo eliminado exitosamente"}, status_code=200)
-
-
-@app.get("/vehiculos/editar/{vehiculo_id}", response_class=HTMLResponse)
-def get_editar_vehiculo(request: Request, vehiculo_id: int):
-    try:
-        vehiculo_data = fetch_vehiculo_by_id(vehiculo_id)
-        if not vehiculo_data:
-            raise HTTPException(status_code=404, detail="Vehículo no encontrado")
-        vehiculo = VehiculoDB(**vehiculo_data)
-        modelos = fetch_all_modelos() or []
-        categorias = fetch_all_categorias() or []
-        return templates.TemplateResponse("pages/editar_vehiculo.html", {"request": request, "vehiculo": vehiculo, "modelos": modelos, "categorias": categorias})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al obtener vehículo para editar")
-        raise
-
-
-@app.post("/vehiculos/editar/{vehiculo_id}")
-def post_editar_vehiculo(
-    request: Request,
-    vehiculo_id: int,
-    matricula: str = Form(...),
-    vin: Optional[str] = Form(None),
-    modelo_id: int = Form(...),
-    color: Optional[str] = Form(None),
-    kilometraje: Optional[int] = Form(0),
-    estado: Optional[str] = Form("disponible"),
-    precio_dia: float = Form(...),
-    ubicacion: Optional[str] = Form(None)
-):
-    try:
-        vehiculo_data = VehiculoUpdate(
-            matricula=matricula,
-            vin=vin if vin else None,
-            modelo_id=int(modelo_id),
-            color=color if color else None,
-            kilometraje=int(kilometraje) if kilometraje is not None else 0,
-            estado=estado,
-            precio_dia=float(precio_dia),
-            ubicacion=ubicacion if ubicacion else None
-        )
-
-        actualizado = update_vehiculo(
-            vehiculo_id,
-            vehiculo_data.matricula,
-            vehiculo_data.vin,
-            vehiculo_data.modelo_id,
-            vehiculo_data.color,
-            vehiculo_data.kilometraje,
-            vehiculo_data.estado,
-            vehiculo_data.precio_dia,
-            vehiculo_data.ubicacion
-        )
-
-        if not actualizado:
-            raise HTTPException(status_code=404, detail="Vehículo no encontrado")
-
-        return RedirectResponse(url="/vehiculos", status_code=303)
-
-    except ValidationError as e:
-        errores = []
-        for error in e.errors():
-            campo = str(error['loc'][0]) if error['loc'] else 'campo'
-            mensaje = error['msg']
-            errores.append(f"{campo.capitalize()}: {mensaje}")
-
-        vehiculo_temp = VehiculoDB(
-            id=vehiculo_id,
-            matricula=matricula,
-            vin=vin,
-            modelo_id=modelo_id,
-            color=color,
-            kilometraje=kilometraje,
-            estado=estado,
-            precio_dia=precio_dia,
-            ubicacion=ubicacion
-        )
-
-        modelos = fetch_all_modelos() or []
-        categorias = fetch_all_categorias() or []
-
-        return templates.TemplateResponse("pages/editar_vehiculo.html", {"request": request, "vehiculo": vehiculo_temp, "errores": errores, "modelos": modelos, "categorias": categorias}, status_code=422)
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al actualizar vehículo")
-        raise HTTPException(status_code=500, detail="Error interno al actualizar vehículo")
-
-
-# ----------------------------
-# Routes: Reservas and Pagos
-# ----------------------------
-@app.get("/reservas", response_class=HTMLResponse)
-def get_reservas(request: Request):
-    """
-    Return reservas page. If DB fails, the global handler will render error404.html.
-    """
-    try:
-        reservas_rows = fetch_all_reservas() or []
-        reservas = map_rows_to_reservas(reservas_rows)
-        clientes_rows = fetch_all_clientes() or []
-        vehiculos_rows = fetch_all_vehiculos() or []
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-
-        reservas_json = list_models_to_dicts(reservas)
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
-
-        return templates.TemplateResponse("pages/reservas.html", {"request": request, "reservas": reservas, "clientes": clientes, "vehiculos": vehiculos, "reservas_json": reservas_json, "clientes_json": clientes_json, "vehiculos_json": vehiculos_json})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al obtener reservas")
-        raise
-
-
-@app.get("/reservas/nueva", response_class=HTMLResponse)
-def get_nueva_reserva(request: Request):
-    try:
-        clientes_rows = fetch_all_clientes() or []
-        vehiculos_rows = fetch_all_vehiculos() or []
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
-
-        return templates.TemplateResponse("pages/nueva_reserva.html", {"request": request, "clientes": clientes, "vehiculos": vehiculos, "clientes_json": clientes_json, "vehiculos_json": vehiculos_json})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al preparar formulario nueva reserva")
-        raise
-
-
-@app.post("/reservas/nueva")
-def post_nueva_reserva(
-    request: Request,
-    cliente_id: int = Form(...),
-    vehiculo_id: int = Form(...),
-    # Accept empleado_id as string to tolerate empty string from forms, then convert
-    empleado_id: Optional[str] = Form(None),
-    fecha_inicio: str = Form(...),
-    fecha_fin: str = Form(...),
-    # Accept total_estimado as string to tolerate empty input, then convert
-    total_estimado: Optional[str] = Form(None),
-    notas: Optional[str] = Form(None)
-):
-    try:
-        # Convert empleado_id safely
-        empleado_id_int: Optional[int] = None
-        if empleado_id is not None and str(empleado_id).strip() != "":
-            try:
-                empleado_id_int = int(empleado_id)
-            except ValueError:
-                raise ValidationError([{"loc": ("empleado_id",), "msg": "Empleado inválido", "type": "value_error"}], model=ReservaBase)
-
-        # Convert total_estimado safely
-        total_estimado_float: Optional[float] = None
-        if total_estimado is not None and str(total_estimado).strip() != "":
-            try:
-                total_estimado_float = float(total_estimado)
-            except ValueError:
-                raise ValidationError([{"loc": ("total_estimado",), "msg": "Total estimado inválido", "type": "value_error"}], model=ReservaBase)
-
-        reserva_data = ReservaBase(
-            cliente_id=int(cliente_id),
-            vehiculo_id=int(vehiculo_id),
-            empleado_id=empleado_id_int,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            total_estimado=total_estimado_float,
-            notas=notas if notas else None
-        )
-
-        reserva_id = insert_reserva(
-            reserva_data.cliente_id,
-            reserva_data.vehiculo_id,
-            reserva_data.empleado_id,
-            reserva_data.fecha_inicio,
-            reserva_data.fecha_fin,
-            reserva_data.estado,
-            reserva_data.total_estimado,
-            reserva_data.notas
-        )
-
-        return RedirectResponse(url="/", status_code=303)
-
-    except ValidationError as e:
-        errores = []
-        for error in e.errors():
-            loc = error.get("loc", [])
-            campo = loc[0] if loc else "campo"
-            mensaje = error.get("msg", "Valor inválido")
-            errores.append(f"{campo}: {mensaje}")
-
-        clientes_rows = fetch_all_clientes() or []
-        vehiculos_rows = fetch_all_vehiculos() or []
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
-
-        return templates.TemplateResponse(
-            "pages/nueva_reserva.html",
-            {
-                "request": request,
-                "errores": errores,
-                "clientes": clientes,
-                "vehiculos": vehiculos,
-                "clientes_json": clientes_json,
-                "vehiculos_json": vehiculos_json,
-                "cliente_id": cliente_id,
-                "vehiculo_id": vehiculo_id,
-                "fecha_inicio": fecha_inicio,
-                "fecha_fin": fecha_fin,
-                "total_estimado": total_estimado,
-                "notas": notas
-            },
-            status_code=422
-        )
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al insertar reserva")
-        raise
-
-
-@app.delete("/reservas/{reserva_id}")
-def delete_reserva_endpoint(reserva_id: int):
-    eliminado = delete_reserva(reserva_id)
-    if not eliminado:
-        raise HTTPException(status_code=404, detail="Reserva no encontrada")
-    return JSONResponse(content={"mensaje": "Reserva eliminada exitosamente"}, status_code=200)
-
-
-@app.get("/reservas/editar/{reserva_id}", response_class=HTMLResponse)
-def get_editar_reserva(request: Request, reserva_id: int):
-    try:
-        reserva_data = fetch_reserva_by_id(reserva_id)
-        if not reserva_data:
-            raise HTTPException(status_code=404, detail="Reserva no encontrada")
-        reserva = ReservaDB(**reserva_data)
-        clientes_rows = fetch_all_clientes() or []
-        vehiculos_rows = fetch_all_vehiculos() or []
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-
-        reserva_json = model_to_dict(reserva)
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
-
-        return templates.TemplateResponse("pages/editar_reserva.html", {"request": request, "reserva": reserva, "clientes": clientes, "vehiculos": vehiculos, "reserva_json": reserva_json, "clientes_json": clientes_json, "vehiculos_json": vehiculos_json})
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al obtener reserva para editar")
-        raise
-
-
-@app.post("/reservas/editar/{reserva_id}")
-def post_editar_reserva(
-    request: Request,
-    reserva_id: int,
-    cliente_id: int = Form(...),
-    vehiculo_id: int = Form(...),
-    empleado_id: Optional[str] = Form(None),
-    fecha_inicio: str = Form(...),
-    fecha_fin: str = Form(...),
-    estado: str = Form(...),
-    total_estimado: Optional[str] = Form(None),
-    notas: Optional[str] = Form(None)
-):
-    try:
-        empleado_id_int: Optional[int] = None
-        if empleado_id is not None and str(empleado_id).strip() != "":
-            try:
-                empleado_id_int = int(empleado_id)
-            except ValueError:
-                raise ValidationError([{"loc": ("empleado_id",), "msg": "Empleado inválido", "type": "value_error"}], model=ReservaBase)
-
-        total_estimado_float: Optional[float] = None
-        if total_estimado is not None and str(total_estimado).strip() != "":
-            try:
-                total_estimado_float = float(total_estimado)
-            except ValueError:
-                raise ValidationError([{"loc": ("total_estimado",), "msg": "Total estimado inválido", "type": "value_error"}], model=ReservaBase)
-
-        reserva_data = ReservaBase(
-            cliente_id=int(cliente_id),
-            vehiculo_id=int(vehiculo_id),
-            empleado_id=empleado_id_int,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            estado=estado,
-            total_estimado=total_estimado_float,
-            notas=notas if notas else None
-        )
-
-        actualizado = update_reserva(
-            reserva_id,
-            reserva_data.cliente_id,
-            reserva_data.vehiculo_id,
-            reserva_data.empleado_id,
-            reserva_data.fecha_inicio,
-            reserva_data.fecha_fin,
-            reserva_data.estado,
-            reserva_data.total_estimado,
-            reserva_data.notas
-        )
-
-        if not actualizado:
-            raise HTTPException(status_code=404, detail="Reserva no encontrada")
-
-        return RedirectResponse(url="/reservas", status_code=303)
-
-    except ValidationError as e:
-        errores = []
-        for error in e.errors():
-            loc = error.get("loc", [])
-            campo = loc[0] if loc else "campo"
-            mensaje = error.get("msg", "Valor inválido")
-            errores.append(f"{campo}: {mensaje}")
-
-        reserva_temp = ReservaDB(
-            id=reserva_id,
-            cliente_id=cliente_id,
-            vehiculo_id=vehiculo_id,
-            empleado_id=int(empleado_id) if empleado_id and str(empleado_id).strip() != "" else None,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            estado=estado,
-            total_estimado=float(total_estimado) if total_estimado and str(total_estimado).strip() != "" else None,
-            notas=notas
-        )
-
-        clientes_rows = fetch_all_clientes() or []
-        vehiculos_rows = fetch_all_vehiculos() or []
-        clientes = map_rows_to_clientes(clientes_rows)
-        vehiculos = map_rows_to_vehiculos(vehiculos_rows)
-
-        reserva_json = model_to_dict(reserva_temp)
-        clientes_json = list_models_to_dicts(clientes)
-        vehiculos_json = list_models_to_dicts(vehiculos)
-
-        return templates.TemplateResponse("pages/editar_reserva.html", {"request": request, "reserva": reserva_temp, "errores": errores, "clientes": clientes, "vehiculos": vehiculos, "reserva_json": reserva_json, "clientes_json": clientes_json, "vehiculos_json": vehiculos_json}, status_code=422)
-    except DatabaseConnectionError:
-        raise
-    except Exception:
-        logger.exception("Error al actualizar reserva")
-        raise HTTPException(status_code=500, detail="Error interno al actualizar reserva")
-
-
-# ----------------------------
-# Pagos (simple)
-# ----------------------------
-@app.post("/pagos/nuevo")
-def post_nuevo_pago(
-    reserva_id: int = Form(...),
-    monto: float = Form(...),
-    metodo_pago: str = Form(...),
-    referencia: Optional[str] = Form(None)
-):
-    if monto <= 0:
-        raise HTTPException(status_code=422, detail="Monto debe ser mayor que 0")
-
-    pago_id = insert_pago(reserva_id, monto, metodo_pago, referencia)
-    if not pago_id:
-        raise HTTPException(status_code=400, detail="No se pudo registrar el pago")
-
-    return JSONResponse(content={"mensaje": "Pago registrado", "pago_id": pago_id}, status_code=201)
-
-
-@app.get("/pagos/{reserva_id}", response_class=JSONResponse)
-def get_pagos_reserva(reserva_id: int):
-    pagos = fetch_pagos_by_reserva(reserva_id)
-    return JSONResponse(content={"pagos": pagos}, status_code=200)
-
-
-# ----------------------------
-# Health
-# ----------------------------
-@app.get("/health", response_class=JSONResponse)
+# Health check
+@app.get("/health")
 def health_check():
     return JSONResponse(content={"status": "ok", "service": "autorent"}, status_code=200)
+
+
+# Endpoint para mostrar la página de error manualmente si se desea
+@app.get("/error404", response_class=HTMLResponse)
+def get_error404(request: Request):
+    try:
+        return templates.TemplateResponse(
+            "pages/error404.html",
+            {
+                "request": request,
+                "mensaje": "Ha ocurrido un error. Comprueba la conexión a la base de datos o contacta con el administrador.",
+            },
+            status_code=404,
+        )
+    except Exception:
+        return JSONResponse(
+            content={"detail": "Error crítico: no se pudo renderizar la página de error."}, status_code=500
+        )

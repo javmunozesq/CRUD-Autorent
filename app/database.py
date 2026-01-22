@@ -2,6 +2,7 @@
 from dotenv import load_dotenv, find_dotenv
 import os
 import mysql.connector
+from mysql.connector import Error as MySQLError
 from typing import List, Dict, Any, Optional, cast
 from mysql.connector.cursor import MySQLCursorDict
 
@@ -25,24 +26,35 @@ def get_connection():
 
     Si falla la conexión, lanza DatabaseConnectionError con el mensaje original.
     """
+    host = os.getenv("DB_HOST", "localhost")
+    user = os.getenv("DB_USER", "root")
+    # Compatibilidad con DB_PASSWORD o DB_PASS
+    password = os.getenv("DB_PASSWORD", os.getenv("DB_PASS", ""))
+    database = os.getenv("DB_NAME", "autorent")
+    try:
+        port = int(os.getenv("DB_PORT", "3306"))
+    except Exception:
+        port = 3306
+
     try:
         conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            user=os.getenv("DB_USER", "root"),
-            password=os.getenv("DB_PASSWORD", ""),
-            database=os.getenv("DB_NAME", "autorent"),
-            port=int(os.getenv("DB_PORT", "3306")),
+            host=host,
+            user=user,
+            password=password,
+            database=database,
+            port=port,
             charset="utf8mb4",
             use_unicode=True,
-            autocommit=False
+            autocommit=False,
+            connection_timeout=5
         )
         return conn
-    except mysql.connector.Error as e:
+    except MySQLError as e:
         # Lanzar excepción personalizada para que la app la maneje y muestre la plantilla de error
-        raise DatabaseConnectionError(f"Error al conectar con la base de datos: {e}")
+        raise DatabaseConnectionError(f"Error al conectar con la base de datos: {e}") from e
     except Exception as e:
         # Capturar cualquier otra excepción inesperada
-        raise DatabaseConnectionError(f"Error inesperado al conectar con la base de datos: {e}")
+        raise DatabaseConnectionError(f"Error inesperado al conectar con la base de datos: {e}") from e
 
 
 # ----------------------------
